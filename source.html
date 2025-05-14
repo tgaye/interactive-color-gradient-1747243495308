@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Color Gradient</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        #canvas-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            max-width: 250px;
+            backdrop-filter: blur(5px);
+        }
+
+        #ui h2 {
+            margin-top: 0;
+            font-size: 16px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+        }
+
+        .value-display {
+            font-size: 12px;
+            color: #aaa;
+            text-align: right;
+        }
+
+        #toggle-ui {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .color-picker {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .color-picker input[type="color"] {
+            margin-right: 10px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            background: none;
+        }
+
+        .color-picker span {
+            font-size: 14px;
+        }
+
+        #error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            max-width: 80%;
+            display: none;
+        }
+    </style>
+
+<base target="_self">
+
+
+    <div id="canvas-container"></div>
+    <button id="toggle-ui">Toggle UI</button>
+    <div id="ui">
+        <h2>Gradient Controls</h2>
+        
+        <div class="control-group">
+            <label for="speed">Animation Speed</label>
+            <input type="range" id="speed" min="0" max="2" step="0.1" value="0.5">
+            <div class="value-display" id="speed-value">0.5</div>
+        </div>
+
+        <div class="control-group">
+            <label for="distortion">Distortion Amount</label>
+            <input type="range" id="distortion" min="0" max="1" step="0.05" value="0.3">
+            <div class="value-display" id="distortion-value">0.3</div>
+        </div>
+
+        <div class="control-group">
+            <label for="mouseInfluence">Mouse Influence</label>
+            <input type="range" id="mouseInfluence" min="0" max="1" step="0.05" value="0.5">
+            <div class="value-display" id="mouseInfluence-value">0.5</div>
+        </div>
+
+        <div class="control-group">
+            <label>Colors</label>
+            <div class="color-picker">
+                <input type="color" id="color1" value="#ff0000">
+                <span>Color 1</span>
+            </div>
+            <div class="color-picker">
+                <input type="color" id="color2" value="#00ff00">
+                <span>Color 2</span>
+            </div>
+            <div class="color-picker">
+                <input type="color" id="color3" value="#0000ff">
+                <span>Color 3</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="error-message"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+    <script>
+        // Check for WebGL support
+        if (!WebGLRenderingContext) {
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.innerHTML = 'Your browser does not support WebGL. Please try with a modern browser.';
+            errorMessage.style.display = 'block';
+            throw new Error('WebGL not supported');
+        }
+
+        // Main variables
+        let scene, camera, renderer, material, mesh;
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+
+        // UI elements
+        const speedSlider = document.getElementById('speed');
+        const distortionSlider = document.getElementById('distortion');
+        const mouseInfluenceSlider = document.getElementById('mouseInfluence');
+        const color1Picker = document.getElementById('color1');
+        const color2Picker = document.getElementById('color2');
+        const color3Picker = document.getElementById('color3');
+        const toggleUI = document.getElementById('toggle-ui');
+        const uiPanel = document.getElementById('ui');
+
+        // Display values
+        const speedValue = document.getElementById('speed-value');
+        const distortionValue = document.getElementById('distortion-value');
+        const mouseInfluenceValue = document.getElementById('mouseInfluence-value');
+
+        // Initialize Three.js scene
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // Calculate dimensions respecting max-width
+            const maxWidth = 1200;
+            const aspectRatio = 16/9;
+            const width = Math.min(window.innerWidth, maxWidth);
+            const height = width / aspectRatio;
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            container.appendChild(renderer.domElement);
+
+            // Create camera
+            camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+            // Create scene
+            scene = new THREE.Scene();
+
+            // Create shader material
+            material = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    resolution: { value: new THREE.Vector2(width, height) },
+                    mouse: { value: new THREE.Vector2(0, 0) },
+                    speed: { value: parseFloat(speedSlider.value) },
+                    distortion: { value: parseFloat(distortionSlider.value) },
+                    mouseInfluence: { value: parseFloat(mouseInfluenceSlider.value) },
+                    color1: { value: new THREE.Color(color1Picker.value) },
+                    color2: { value: new THREE.Color(color2Picker.value) },
+                    color3: { value: new THREE.Color(color3Picker.value) }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    precision highp float;
+                    uniform float time;
+                    uniform vec2 resolution;
+                    uniform vec2 mouse;
+                    uniform float speed;
+                    uniform float distortion;
+                    uniform float mouseInfluence;
+                    uniform vec3 color1;
+                    uniform vec3 color2;
+                    uniform vec3 color3;
+                    varying vec2 vUv;
+
+                    // Smooth HSV to RGB conversion
+                    vec3 hsv2rgb(vec3 c) {
+                        vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+                        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                    }
+
+                    // 2D rotation matrix
+                    mat2 rotate2d(float angle) {
+                        return mat2(cos(angle), -sin(angle),
+                                    sin(angle), cos(angle));
+                    }
+
+                    // Smooth blending function
+                    float blend(float a, float b, float t) {
+                        return mix(a, b, t);
+                    }
+
+                    void main() {
+                        // Normalized pixel coordinates
+                        vec2 uv = vUv;
+                        
+                        // Center coordinates
+                        vec2 centered = uv * 2.0 - 1.0;
+                        float aspect = resolution.x / resolution.y;
+                        centered.x *= aspect;
+                        
+                        // Mouse influence
+                        vec2 mousePos = (mouse * 2.0 - 1.0) * mouseInfluence;
+                        mousePos.x *= aspect;
+                        
+                        // Time-based animation
+                        float t = time * speed * 0.1;
+                        
+                        // Create distortion pattern
+                        vec2 distorted = centered;
+                        distorted += vec2(
+                            sin(centered.y * 10.0 + t * 2.0) * 0.05,
+                            cos(centered.x * 8.0 + t * 1.5) * 0.05
+                        ) * distortion;
+                        
+                        // Add mouse influence to distortion
+                        distorted += mousePos * 0.2;
+                        
+                        // Create gradient pattern
+                        float gradient = length(distorted);
+                        gradient = smoothstep(0.2, 0.8, gradient);
+                        
+                        // Create color mixing pattern
+                        float colorMix = sin(length(distorted * 2.0) * 0.5 + 0.5 + t * 0.2);
+                        colorMix = fract(colorMix);
+                        
+                        // Blend between the three colors
+                        vec3 color;
+                        if (colorMix < 0.5) {
+                            color = mix(color1, color2, colorMix * 2.0);
+                        } else {
+                            color = mix(color2, color3, (colorMix - 0.5) * 2.0);
+                        }
+                        
+                        // Add subtle pulsing effect
+                        float pulse = sin(time * speed * 0.5) * 0.05 + 1.0;
+                        color *= pulse;
+                        
+                        // Output final color
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `
+            });
+
+            // Create full-screen quad
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('touchmove', onTouchMove);
+
+            // UI event listeners
+            speedSlider.addEventListener('input', updateUniforms);
+            distortionSlider.addEventListener('input', updateUniforms);
+            mouseInfluenceSlider.addEventListener('input', updateUniforms);
+            color1Picker.addEventListener('input', updateUniforms);
+            color2Picker.addEventListener('input', updateUniforms);
+            color3Picker.addEventListener('input', updateUniforms);
+            toggleUI.addEventListener('click', () => {
+                uiPanel.style.display = uiPanel.style.display === 'none' ? 'block' : 'none';
+            });
+
+            // Start animation loop
+            animate();
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update time uniform
+            material.uniforms.time.value += 0.05;
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            const maxWidth = 1200;
+            const aspectRatio = 16/9;
+            const width = Math.min(window.innerWidth, maxWidth);
+            const height = width / aspectRatio;
+
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            
+            renderer.setSize(width, height);
+            material.uniforms.resolution.value.set(width, height);
+            
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+        }
+
+        // Handle mouse movement
+        function onMouseMove(event) {
+            mouseX = (event.clientX - windowHalfX) / windowHalfX;
+            mouseY = (event.clientY - windowHalfY) / windowHalfY;
+            
+            material.uniforms.mouse.value.set(
+                event.clientX / window.innerWidth,
+                1.0 - (event.clientY / window.innerHeight)
+            );
+        }
+
+        // Handle touch movement
+        function onTouchMove(event) {
+            if (event.touches.length > 0) {
+                mouseX = (event.touches[0].clientX - windowHalfX) / windowHalfX;
+                mouseY = (event.touches[0].clientY - windowHalfY) / windowHalfY;
+                
+                material.uniforms.mouse.value.set(
+                    event.touches[0].clientX / window.innerWidth,
+                    1.0 - (event.touches[0].clientY / window.innerHeight)
+                );
+            }
+        }
+
+        // Update shader uniforms from UI
+        function updateUniforms() {
+            material.uniforms.speed.value = parseFloat(speedSlider.value);
+            material.uniforms.distortion.value = parseFloat(distortionSlider.value);
+            material.uniforms.mouseInfluence.value = parseFloat(mouseInfluenceSlider.value);
+            material.uniforms.color1.value = new THREE.Color(color1Picker.value);
+            material.uniforms.color2.value = new THREE.Color(color2Picker.value);
+            material.uniforms.color3.value = new THREE.Color(color3Picker.value);
+            
+            // Update displayed values
+            speedValue.textContent = speedSlider.value;
+            distortionValue.textContent = distortionSlider.value;
+            mouseInfluenceValue.textContent = mouseInfluenceSlider.value;
+        }
+
+        // Initialize the application
+        init();
+    </script>
+
+              
+          
+                
+          
+              
